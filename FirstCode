@@ -1,0 +1,17 @@
+
+public class FirstClass 
+{
+	public int test;
+	private int test2;
+	protected int test3;
+	
+	public String myString;
+	public char myChar;
+	
+	public static void main(String[] args) 
+	{
+		FirstClass firstClass = new FirstClass();
+		firstClass.test = 2;
+		System.out.print(firstClass.test);
+	}
+}
