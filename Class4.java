@@ -53,7 +53,7 @@ public class Class4
 		//	System.out.println("Index[" + i +"] =>" + stringArray[i]);
 		}
 		
-		for(int i=0; i<=10; i++)
+		for(int i=0; i<10; i++)
 		{
 			myInt.add(i);
 		}
@@ -65,7 +65,7 @@ public class Class4
 		//	sum = sum + t;
 			sum += t;
 		}
-		System.out.println(sum);
+		System.out.println("Total: " + sum);
 		
 		for(int i=0; i<myInt.size(); i++)
 		{
@@ -79,25 +79,23 @@ public class Class4
 			{
 				System.out.println("Even");
 			}
-		}
+		}	
 		
-//		int size2 = myString.size();
-//		for(int x=0; x<size2; x++);
-//		{
-//			System.out.println(shuffle(myString.get(x)));
-//		}
+		
+			
+			int n = myString.size();
+	        for (int i=0; i<n; i++) 
+	        {
+	            int r = (int) (Math.random() * (i + 1));
+	            Object swap = myString.get(r);
+	            myString.set(r, myString.get(i));
+	            myString.set(i, (String)swap);
+	        }
+		    
+	        
+	        for(int i=0; i<myString.size(); i++)
+			{
+				System.out.println("Index[" + i +"] =>" + myString.get(i));
+			}	
 	}
-	
-/*	public static void shuffle (List<String> list) //Knuth's shuffle
-	{
-		Random r = new Random();
-	    int n = list.size();
-	    while (n > 1) 
-	    {
-	        int k = r.nextInt(n--); //decrements after using the value
-	        String temp = list.get(n);
-	        String n1 = list.get(k);
-	         n1 = temp;
-	    }
-	} */
 }
