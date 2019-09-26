@@ -43,6 +43,7 @@ public class SampleSocketClient
 				try
 				{
 					System.out.println("Waiting for user input..");
+					System.out.println("Enter integers: ");
 					line = si.nextLine();
 					if(!"quit".equalsIgnoreCase(line))
 					{
@@ -53,6 +54,15 @@ public class SampleSocketClient
 						break;
 					}
 					line = "";
+					String fromServer = in.readLine();
+					
+					if(fromServer != null) {
+						System.out.println("Reply from server: " + fromServer);
+					}
+					else {
+						System.out.println("Server disconnected");
+						break;
+					}
 				}
 				catch(Exception e)
 				{
@@ -89,7 +99,21 @@ public class SampleSocketClient
 	public static void main(String[] args)
 	{
 		SampleSocketClient client = new SampleSocketClient();
-		client.connect("127.0.0.1", 3002);
+		int port = -1;
+		
+		try
+		{
+			port = Integer.parseInt(args[0]);
+		}
+		catch(Exception e)
+		{
+			System.out.println("Invalid Port");
+		}
+		if(port == -1)
+		{
+			return;
+		}
+		client.connect("127.0.0.1", port);
 		try
 		{
 			client.start();
