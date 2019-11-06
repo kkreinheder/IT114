@@ -37,10 +37,19 @@ public class Client {
 				try {
 					while(!server.isClosed() && isRunning) {
 						Scanner si = new Scanner(System.in);
+						int inputX = 0, inputY = 0;
+
 						System.out.println("Enter x");
-						int inputX = si.nextInt();
+						if(si.hasNextInt())
+						{
+							inputX = si.nextInt();
+						}
 						System.out.println("Enter y");
-						int inputY = si.nextInt();
+						if(si.hasNextInt())
+						{
+							inputY = si.nextInt();
+						}
+						
 						System.out.println("Broadcast to all or send to one?");
 						String input = si.next();
 						if(input.equals("all"))
