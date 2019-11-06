@@ -35,10 +35,9 @@ public class Client {
 			@Override
 			public void run() {
 				try {
+					Scanner si = new Scanner(System.in);
+					int inputX = 0, inputY = 0;
 					while(!server.isClosed() && isRunning) {
-						Scanner si = new Scanner(System.in);
-						int inputX = 0, inputY = 0;
-
 						System.out.println("Enter x");
 						if(si.hasNextInt())
 						{
@@ -77,6 +76,7 @@ public class Client {
 					}
 				}
 				catch(Exception e) {
+					e.printStackTrace();
 					System.out.println("Client shutdown");
 				}
 				finally {
