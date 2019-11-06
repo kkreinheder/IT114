@@ -23,26 +23,12 @@ public class Server{
 	public static void Output(String str) {
 			System.out.println(str);
 	}
-	public synchronized void sendToAllClientsExcept(Payload payload, int excludeId) {
-		//iterate through all clients and attempt to send the message to each
-		if(payload.payloadType != PayloadType.MOVE_SYNC) {
-			//ignore MOVE_SYNC to cut down on log spam
-			Server.Output("Sending message to " + clients.size() + " clients");
-		}
+	public  void broadcast(Payload p) throws IOException {
 		for(int i = 0; i < clients.size(); i++) {
-			if(clients.get(i).id == excludeId) {
-				continue;
-			}
-			try {
-				clients.get(i).send(payload);
-			}
-			catch(Exception e) {
-				e.printStackTrace();
-			}
+			clients.get(i).send(p);
 		}
-		cleanupStaleClients();
 	}
-	public synchronized void sendToClientById(int target, Payload payload) {
+	public void sendToClientById(int target, Payload payload) {
 		//TODO for single client
 		for(int i = 0; i < clients.size(); i++) {
 			if(clients.get(i).id == target) {
@@ -53,21 +39,6 @@ public class Server{
 					e.printStackTrace();
 				}
 				break;
-			}
-		}
-		cleanupStaleClients();
-	}
-	void cleanupStaleClients() {
-		Iterator<ServerThread> it = clients.iterator();
-		while(it.hasNext()) {
-			ServerThread s = it.next();
-			if(s.isClosed()) {
-				s.cleanup();
-				outMessages.add(
-						new Payload(s.id, PayloadType.DISCONNECT)
-						);
-				s.stopThread();
-				it.remove();
 			}
 		}
 	}
@@ -98,14 +69,24 @@ public class Server{
 					Payload payloadOut = outMessages.poll();
 					
 					if(payloadOut != null) {
-						sendToAllClientsExcept(payloadOut, -1);
+						try {
+							broadcast(payloadOut);
+						} catch (IOException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
 						//TODO send message to client(s)
 						if(payloadOut.target > -1) {
 							sendToClientById(payloadOut.target, payloadOut);
 						}
 						else {
 							//Note: we're currently not using the exclusion
-							sendToAllClientsExcept(payloadOut, -1);
+							try {
+								broadcast(payloadOut);
+							} catch (IOException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
 						}
 					}
 					else {
@@ -172,34 +153,31 @@ class ServerThread extends Thread{
 		in = new ObjectInputStream(client.getInputStream());
 		System.out.println("Spawned thread for client " + this.id);
 	}
-	synchronized void processPayload(int id, Payload payloadIn) {
-		
-		server.outMessages.add(payloadIn);
+	synchronized void processPayload(Payload payloadIn) throws IOException {
+		switch(payloadIn.payloadType) {
+			case BROADCAST:
+				server.broadcast(new Payload(PayloadType.BROADCAST, "Coordinates: " + payloadIn.x + payloadIn.y));
+				break;
+			case SINGLE:
+				server.sendToClientById(payloadIn.id,new Payload(PayloadType.SINGLE, "Coordinates: " + payloadIn.x + payloadIn.y));
+		default:
+			break;		
+			
+		}
 	}
 	@Override
 	public void run() {
 		try{
 			Payload fromClient;
-			fromClient = (Payload)in.readObject();
-			while(isRunning && (fromClient != null)) {
+			while(isRunning && (fromClient = (Payload)in.readObject()) != null) {
 				
 				System.out.println("Received: " + fromClient);
 				System.out.println("Client ID: " + fromClient.id);
-				int x = fromClient.x;
-				int y = fromClient.y;
-			//	processPayload(fromClient.id,fromClient);
-				Payload p = new Payload(id,x,y);
-				
-			//	server.outMessages.add(p);
-		//		Payload p = (Payload)out.writeObject();
-				
-		
-				send(p);
-				
-				
-				break;
+				processPayload(fromClient);
+			
 			}
 		}
+		
 		catch(IOException e) {
 			e.printStackTrace();
 		} catch (ClassNotFoundException e) {
@@ -211,6 +189,9 @@ class ServerThread extends Thread{
 			cleanup();
 		}
 	}
+	
+		
+	
 	public void stopThread() {
 		isRunning = false;
 	}

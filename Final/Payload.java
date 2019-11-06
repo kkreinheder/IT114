@@ -11,7 +11,7 @@ public class Payload implements Serializable{
 	public PayloadType payloadType;
 	public int x;
 	public int y;
-	public String extra = null;
+	public String message = null;
 	
 	public Payload(int id, PayloadType type) {
 		this(id, type, 0,0, null);
@@ -32,9 +32,13 @@ public class Payload implements Serializable{
 		payloadType = type;
 		this.x = x;
 		this.y = y;
-		this.extra = extra;
 		this.target = target;
 	}
+	public Payload(PayloadType type, String msg) {
+		this.payloadType = type;
+		this.message = msg;
+	}
+	
 	@Override
 	public String toString() {
 		return this.id + "-"  + "(" + x + "," + y +") - ";

@@ -29,19 +29,7 @@ public class Client {
 			e.printStackTrace();
 		}
 	}
-	public void handleQueuedMessages(Consumer<Payload> processFromServer, int messagesToHandle) {
-		Payload p = null;
-		int processed = 0;
-		while((p = this.getMessage()) != null) {
-			//call the processFromServer callback with the payload as a parameter
-			processFromServer.accept(p);
-			//process up to [messagesToHandle] messages per "tick"
-			processed++;
-			if(processed >= messagesToHandle) {
-				break;
-			}
-		}
-	}
+
 	void pollMessagesToSend(ObjectOutputStream out) {
 		Thread inputThread = new Thread() {
 			@Override
@@ -53,15 +41,29 @@ public class Client {
 						int inputX = si.nextInt();
 						System.out.println("Enter y");
 						int inputY = si.nextInt();
-						Payload payload = new Payload(Server.id,inputX,inputY);
-						outMessages.add(payload);
-						 payload = outMessages.poll();
-						if(payload != null) {
-							out.writeObject(payload);//send to server
-							if(payload.payloadType == PayloadType.DISCONNECT) {
-								System.out.println("Stopping input thread");
-								break;
-							}
+						System.out.println("Broadcast to all or send to one?");
+						String input = si.next();
+						if(input.equals("all"))
+						{
+							Payload payload = new Payload(Server.id,PayloadType.BROADCAST,inputX,inputY);
+							out.writeObject(payload);
+						//	outMessages.add(payload);
+						//payload = outMessages.poll();
+						}
+						else if(input.equals("one"))
+						{
+							System.out.println("Enter client ID");
+							int id = si.nextInt();
+							Payload payload = new Payload(id,PayloadType.SINGLE,inputX,inputY);
+							out.writeObject(payload);
+						//	outMessages.add(payload);
+						//	 payload = outMessages.poll();
+							
+						}
+						else
+						{
+							System.out.println("Invalid");
+							return;
 						}
 					}
 				}
@@ -81,9 +83,9 @@ public class Client {
 			@Override
 			public void run() {
 				try {
-					while(!server.isClosed()) {
+					while(!server.isClosed()&& isRunning) {
 						Payload p = (Payload)in.readObject();
-						inMessages.add(p);
+				//		inMessages.add(p);
 						System.out.println("Replay from server: " + p.toString());
 					}
 					System.out.println("Stopping server listen thread");
@@ -145,6 +147,7 @@ public class Client {
 			}
 		}
 	}
+
 	public static void main(String[] args) {
 		Client client = new Client();
 		int port = -1;
