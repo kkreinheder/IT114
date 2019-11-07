@@ -1,46 +1,31 @@
 import java.io.Serializable;
-/***
- * Data packet to send between client and server
- * @author matt
- *
- */
+//Make it serializable so we can send it across the network
 public class Payload implements Serializable{
-	private static final long serialVersionUID = -7358730485627664992L;
-	public int id;
-	public int target = -1;
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 8631878017121002054L;
 	public PayloadType payloadType;
-	public int x;
-	public int y;
-	public String message = null;
-	
-	public Payload(int id, PayloadType type) {
-		this(id, type, 0,0, null);
-	}
-	public Payload(int id, int x, int y) {
-		this.id = id;
-		this.x = x;
-		this.y = y;
-	}
-	public Payload(int id, PayloadType type, int x, int y) {
-		this(id, type, x, y, null);
-	}
-	public Payload(int id, PayloadType type, int x, int y, String extra) {
-		this(id, type, x, y, extra, -1);
-	}
-	public Payload(int id, PayloadType type, int x, int y, String extra, int target) {
-		this.id = id;
-		payloadType = type;
-		this.x = x;
-		this.y = y;
-		this.target = target;
-	}
-	public Payload(PayloadType type, String msg) {
+	public String message;
+	public int number,index,x,y;
+	//TODO add relevant datatypes, you can share variables based on payloadType
+	public Payload(PayloadType type, String message) {
 		this.payloadType = type;
-		this.message = msg;
+		this.message = message;
 	}
-	
+	public Payload(PayloadType type, int x, int y) {
+		this.payloadType = type;
+		this.x = x;
+		this.y = y;
+	}
+	public Payload(PayloadType type, int x, int y, int index) {
+		this.payloadType = type;
+		this.x = x;
+		this.y = y;
+		this.index = index;
+	}
 	@Override
 	public String toString() {
-		return this.id + "-"  + "(" + x + "," + y +") - ";
+		return "Payload[payloadType: " + payloadType.toString() + ", X: " + x + ", Y: " + y; 
 	}
 }
