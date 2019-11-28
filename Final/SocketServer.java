@@ -5,118 +5,110 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import java.awt.Dimension;
+import java.awt.Point;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map.Entry;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.Queue;
+import java.util.Random;
+
 public class SocketServer{
 	int port = -1;
-	//private Thread clientListenThread = null;
+	static int id = 0;
 	List<ServerThread> clients = new ArrayList<ServerThread>();
 	public static boolean isRunning = true;
+	Queue<Payload> outMessages = new LinkedList<Payload>();
+	Random random = new Random();
+	private ScheduledThreadPoolExecutor exec = new ScheduledThreadPoolExecutor(1);
+	Dimension game = new Dimension(1000,1000);
+	Player players = new Player();
 	public SocketServer() {
 		isRunning = true;
+		exec.scheduleAtFixedRate(()->{
+		}, 5, 5, TimeUnit.SECONDS);
 	}
-	/***
-	 * Send the same payload to all connected clients.
-	 * @param payload
-	 */
-	public synchronized void broadcast(Payload payload) {
-		//iterate through all clients and attempt to send the message to each
-		System.out.println("Sending message to " + clients.size() + " clients");
-		//TODO ensure closed clients are removed from the list
+	
+	public synchronized void broadcast(Payload payload, int excludeId) {
+		if(payload.payloadType != PayloadType.MOVE_SYNC) {
+			//ignore MOVE_SYNC to cut down on log spam
+			SocketServer.Output("Sending message to " + clients.size() + " clients");
+		}
 		for(int i = 0; i < clients.size(); i++) {
-			clients.get(i).send(payload);
-		}
-	}
-	public void removeClient(ServerThread client) {
-		Iterator<ServerThread> it = clients.iterator();
-		while(it.hasNext()) {
-			ServerThread s = it.next();
-			if(s == client) {
-				System.out.println("Matched client");
-				it.remove();
+			if(clients.get(i).id == excludeId) {
+				continue;
 			}
-			
+			try {
+				clients.get(i).send(payload);
+			}
+			catch(Exception e) {
+				e.printStackTrace();
+			}
 		}
+		cleanupClients();
 	}
+	public synchronized void sendToClientById(int target, Payload payload) {
+		//TODO for single client
+		for(int i = 0; i < clients.size(); i++) {
+			if(clients.get(i).id == target) {
+				try {
+					clients.get(i).send(payload);
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				break;
+			}
+		}
+		cleanupClients();
+	}
+
 	void cleanupClients() {
 		if(clients.size() == 0) {
-			//we don't need to loop or spam if we don't have clients
+			//we don't need to iterate or spam if we don't have clients
 			return;
 		}
 		//use an iterator here so we can remove elements mid loop/iteration
 		Iterator<ServerThread> it = clients.iterator();
-		System.out.println("Start Cleanup count " + clients.size());
+		int start = clients.size();
 		while(it.hasNext()) {
 			ServerThread s = it.next();
 			if(s.isClosed()) {
-				//payload should have some value to tell all "other" clients which client disconnected
-				//so they can clean up any local tracking/refs or show some sort of feedback
-				broadcast(new Payload(PayloadType.DISCONNECT, null));
+				s.cleanup();
+				outMessages.add(
+						new Payload(s.id, PayloadType.DISCONNECT)
+						);
 				s.stopThread();
 				it.remove();
 			}
 		}
-		System.out.println("End Cleanup count " + clients.size());
-	}
-	/***
-	 * Send a payload to a client based on index (basically in order of connection)
-	 * @param index
-	 * @param payload
-	 */
-	public synchronized void sendToClientByIndex(int index, Payload payload) {
-		//TODO validate index is in bounds
-		clients.get(index).send(payload);
-	}
-	/***
-	 * Send a payload to a client based on a value defined in ServerThread
-	 * @param name
-	 * @param payload
-	 */
-	public synchronized void sendToClientByName(String name, Payload payload) {
-		for(int i = 0; i < clients.size(); i++) {
-			if(clients.get(i).getClientName().equals(name)) {
-				clients.get(i).send(payload);
-				break;//jump out of loop
-			}
+		int diff = start - clients.size();
+		if(diff != 0) {
+			System.out.println("Cleaned up " + diff + " clients");
 		}
 	}
-	/***
-	 * Separate thread to periodically check to clean up clients that may have been disconnected
-	 */
-	void runCleanupThread() {
-		Thread cleanupThread = new Thread() {
-			@Override
-			public void run() {
-				while(SocketServer.isRunning) {
-					cleanupClients();
-					try {
-						Thread.sleep(1000*30);//30 seconds
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
-				}
-				System.out.println("Cleanup thread exited");
-			}
-		};
-		cleanupThread.start();
+	
+	public static void Output(String s) 
+	{
+		System.out.println(s);
 	}
+	
 	private void start(int port) {
 		this.port = port;
 		System.out.println("Waiting for client");
-		runCleanupThread();
 		try(ServerSocket serverSocket = new ServerSocket(port);){
-			while(SocketServer.isRunning) {
-				try {
-					Socket client = serverSocket.accept();
-					System.out.println("Client connected");
-					ServerThread thread = new ServerThread(client, 
-							"Client[" + clients.size() + "]",
-							this);
-					thread.start();//start client thread
-					clients.add(thread);//add to client pool
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-				
-			}
+			trySendMessagesToClients();
+			runGameLoop();
+			listenForConnections(serverSocket);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
@@ -129,11 +121,87 @@ public class SocketServer{
 			}
 		}
 	}
-	
+	void trySendMessagesToClients() {
+		Thread messageSender = new Thread() {
+			@Override
+			public void run() {
+				System.out.println("Starting Message Sender");
+				while(isRunning) {
+					Payload payloadOut = outMessages.poll();
+					if(payloadOut != null) {
+						//TODO send message to client(s)
+						if(payloadOut.target > -1) {
+							sendToClientById(payloadOut.target, payloadOut);
+						}
+						else {
+							//Note: we're currently not using the exclusion
+							broadcast(payloadOut, -1);
+						}
+					}
+					else {
+						//if we don't have a message take a rest
+						try {
+							Thread.sleep(16);
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						}
+					}
+				}
+				System.out.println("Message Sender Thread stopping");
+			}
+		};
+		messageSender.start();
+	}
+	void runGameLoop() {
+		Thread gameLoop = new Thread() {
+			@Override
+			public void run() {
+				int syncCounter = 0;
+				System.out.println("Server game loop starting");
+				while(isRunning) {
+					players.movePlayers();
+					syncCounter++;
+					//every thread.sleep * 20ms force sync all players
+					//we don't want to do this too often for bandwidth concerns
+					if(syncCounter > 20) {
+						syncCounter = 0;
+						for(Entry<Integer, Player> p : players.players.entrySet()) {
+							outMessages.add(
+									new Payload(p.getKey(), PayloadType.MOVE_SYNC,
+											p.getValue().getPosition().x, p.getValue().getPosition().y)
+									);
+						}
+					}
+					try {
+						Thread.sleep(16);
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+				System.out.println("Server game loop stopping");
+			}
+		};
+		gameLoop.start();
+	}
+	void listenForConnections(ServerSocket serverSocket) {
+		while(isRunning) {
+			try {
+				//TODO listen for new connections
+				Socket client = serverSocket.accept();
+				System.out.println("Client connected");
+				ServerThread thread = new ServerThread(client, this);
+				thread.start();//start client thread
+				clients.add(thread);//add to client pool
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
 	public static void main(String[] arg) {
 		System.out.println("Starting Server");
 		SocketServer server = new SocketServer();
-		int port = -1;//port should be coming from command line arguments
+		int port = -1;
 		if(arg.length > 0){
 			try{
 				port = Integer.parseInt(arg[0]);

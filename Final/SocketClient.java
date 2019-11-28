@@ -2,30 +2,146 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
-import java.util.Scanner;
+import java.net.UnknownHostException;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.function.Consumer;
 
 public class SocketClient {
 	Socket server;
-	public void connect(String address, int port) {
+	UI ui;
+	public static String host;
+	public static int port;
+	boolean isRunning = false;
+	Queue<Payload> outMessages = new LinkedList<Payload>();
+	Queue<Payload> inMessages = new LinkedList<Payload>();
+/*	public void connect(String address, int port) {
 		try {
 			//create new socket to destination and port
 			server = new Socket(address, port);
 			System.out.println("Client connected");
+			ui = new UI();
+			ui.game(); 
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+	} */
+	public static void main(String[] args) {
+	//	SocketClient client = new SocketClient();
+		UI ui = new UI();
+		ui.connectGUI();
+	//	client.connect(host,port);
+		
 	}
+	public boolean connect(String address, int port) throws UnknownHostException, IOException {
+		server = new Socket(address, port);
+		System.out.println("Client connected");
+		SocketClient self = this;
+		Thread nc = new Thread() {
+			@Override
+			public void run() {
+				try {
+					self.start();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		};
+		nc.start();
+		return true;
+	} 
+
+	public void handleQueuedMessages(Consumer<Payload> processFromServer, int messagesToHandle) {
+		Payload p = null;
+		int processed = 0;
+		while((p = this.getMessage()) != null) {
+			//call the processFromServer callback with the payload as a parameter
+			processFromServer.accept(p);
+			//process up to [messagesToHandle] messages per "tick"
+			processed++;
+			if(processed >= messagesToHandle) {
+				break;
+			}
+		}
+	}
+	void pollMessagesToSend(ObjectOutputStream out) {
+		Thread inputThread = new Thread() {
+			@Override
+			public void run() {
+				try {
+					while(!server.isClosed() && isRunning) {
+						Payload payload = outMessages.poll();
+						if(payload != null) {
+							out.writeObject(payload);//send to server
+							if(payload.payloadType == PayloadType.DISCONNECT) {
+								System.out.println("Stopping input thread");
+								break;
+							}
+						}
+					}
+				}
+				catch(Exception e) {
+					System.out.println("Client shutdown");
+				}
+				finally {
+					close();
+				}
+			}
+		};
+		inputThread.start();//start the thread
+	}
+	
+	void listenForServer(ObjectInputStream in) {
+		//Thread to listen for responses from server so it doesn't block main thread
+		Thread fromServerThread = new Thread() {
+			@Override
+			public void run() {
+				try {
+					while(!server.isClosed() && isRunning) {
+						Payload p = (Payload)in.readObject();
+						inMessages.add(p);
+						if(p.payloadType != PayloadType.MOVE_SYNC)
+						System.out.println("Replay from server: " + p.toString());
+					}
+					System.out.println("Stopping server listen thread");
+				}
+				catch (Exception e) {
+					if(!server.isClosed()) {
+						e.printStackTrace();
+						System.out.println("Server closed connection");
+					}
+					else {
+						System.out.println("Connection closed");
+					}
+				}
+				finally {
+					close();
+				}
+			}
+		};
+		fromServerThread.start();//start the thread
+	}
+	
 	public void start() throws IOException {
 		if(server == null) {
 			return;
 		}
 		System.out.println("Client Started");
+		isRunning = true;
 		//listen to console, server in, and write to server out
-		try(Scanner si = new Scanner(System.in);
+		try(
 				ObjectOutputStream out = new ObjectOutputStream(server.getOutputStream());
 				ObjectInputStream in = new ObjectInputStream(server.getInputStream());){
+			pollMessagesToSend(out);
+			listenForServer(in);
+			
+			while(!server.isClosed() && isRunning) {
+				Thread.sleep(50);
+			}
+			System.out.println("Exited loop");
+			System.exit(0);
 			//Thread to listen for keyboard input so main thread isn't blocked
-			Thread inputThread = new Thread() {
+			/*	Thread inputThread = new Thread() {
 				@Override
 				public void run() {
 					try {
@@ -55,7 +171,7 @@ public class SocketClient {
 								out.writeObject(new Payload(PayloadType.DISCONNECT, null));
 								break;
 							}
-						}
+						} */
 					}
 					catch(Exception e) {
 						System.out.println("Client shutdown");
@@ -63,59 +179,8 @@ public class SocketClient {
 					finally {
 						close();
 					}
-				}
-			};
-			inputThread.start();//start the thread
-			
-			//Thread to listen for responses from server so it doesn't block main thread
-			Thread fromServerThread = new Thread() {
-				@Override
-				public void run() {
-					try {
-						Payload fromServer;
-						//while we're connected, listed for payloads from server
-						while(!server.isClosed() && (fromServer = (Payload)in.readObject()) != null) {
-							processPayload(fromServer);
-						}
-						System.out.println("Stopping server listen thread");
-					}
-					catch (Exception e) {
-						if(!server.isClosed()) {
-							e.printStackTrace();
-							System.out.println("Server closed connection");
-						}
-						else {
-							System.out.println("Connection closed");
-						}
-					}
-					finally {
-						close();
-					}
-				}
-			};
-			fromServerThread.start();//start the thread
-			
-			//Keep main thread alive until the socket is closed
-			while(!server.isClosed()) {
-				Thread.sleep(50);
-			}
-			System.out.println("Exited loop");
-			System.exit(0);//force close
-			//TODO implement cleaner closure when server stops
-			//without this, it still waits for input before terminating
-		}
-		catch(Exception e) {
-			e.printStackTrace();
-		}
-		finally {
-			close();
-		}
 	}
-	/**
-	 * Handle our different payload types.
-	 * You may create functions for each case to help organize code or keep it cleaner
-	 * @param p
-	 */
+			
 	void processPayload(Payload p) {
 		switch(p.payloadType) {
 			case CONNECT:
@@ -142,36 +207,43 @@ public class SocketClient {
 			}
 		}
 	}
-	public static void main(String[] args) {
-		SocketClient client = new SocketClient();
-		//grab host:port from commandline
-		//TODO this was reworked, please take note
-		String host = null;
-		int port = -1;
-		try{
-			//not safe but try-catch will get it
-			if(args[0].indexOf(":") > -1) {
-				String[] target = args[0].split(":");
-				host = target[0].trim();
-				port = Integer.parseInt(target[1].trim());
-			}
-			else {
-				System.out.println("Important!: Please pass the argument as hostname:port or ipaddress:port");
-			}
-		}
-		catch(Exception e){
-			System.out.println("Error parsing host:port argument[0]");
-		}
-		if(port == -1 || host == null){
-			return;
-		}
-		client.connect(host, port);
-		try {
-			//if start is private, it's valid here since this main is part of the class
-			client.start();
-		} catch (IOException e) {
-			e.printStackTrace();
+	
+	public void send(int id, PayloadType type) {
+		send(id, type, 0,0, null);
+	}
+//	public void send(int id, PayloadType type, String extra) {
+//		send(id, type, 0,0,extra);
+//	}
+	public void send(int id, PayloadType type, int x, int y) {
+		send(id, type, x, y, null);
+	}
+	public void send(int id, PayloadType type, int x, int y, String extra) {
+		if(server != null && !server.isClosed()) {
+			System.out.println("Sending " + ((PayloadType)type).toString());
+			outMessages.add(new Payload(id, type, x, y, extra));
 		}
 	}
-
+	
+	public Payload getMessage() {
+		return inMessages.poll();
+	}
+	
+	public void disconnect(int id) {
+		send(id, PayloadType.DISCONNECT);
+	}
+	
+	public void terminate() {
+		isRunning = false;
+		System.exit(0);
+	}
+	
+	public void setHost(String host)
+	{
+		SocketClient.host = host;
+	}
+	public void setPort(int port)
+	{
+		SocketClient.port = port;
+	}
 }
+

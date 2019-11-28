@@ -1,92 +1,146 @@
+import java.awt.Point;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.util.Map.Entry;
 
-//Class to hold client connection and prevent it from blocking the main thread of the server
-public class ServerThread extends Thread{
-	private Socket client;//server's reference to the connect client
-	private String clientName;//this connected client's name
-	//Object streams that let us pass objects
-	private ObjectInputStream in;//from client
-	private ObjectOutputStream out;//to client
-	private boolean isRunning = false;//boolean to control termination
-	SocketServer server;
-	public ServerThread(Socket myClient, String clientName, SocketServer server) throws IOException {
+
+class ServerThread extends Thread{
+	private Socket client;
+	private Player players = new Player();
+	private String clientName;
+	public int id;
+	private ObjectInputStream in;
+	private ObjectOutputStream out;
+	private boolean isRunning = false;
+	private SocketServer server;
+	public ServerThread(Socket myClient, SocketServer server) throws IOException {
 		this.client = myClient;
-		this.clientName = clientName;
 		this.server = server;
 		isRunning = true;
 		out = new ObjectOutputStream(client.getOutputStream());
 		in = new ObjectInputStream(client.getInputStream());
-		System.out.println("Spawned thread for client " + clientName);
+		System.out.println("Spawned thread for client " + this.id);
 	}
+	public boolean isClosed() {
+		return client.isClosed();
+	}
+	Point dir = new Point(-2,-2);
+	private void createAndSync(int id, String name) {
+		this.id = id;
+		Player newPlayer = new Player(name);
+		newPlayer.setID(id);
+		players.addPlayer(id, newPlayer);
+		//generate random position and no direction
+		//account for radius offset so we don't get stuck in a wall
+		int offset = newPlayer.getRadius() + 1;
+		int x = server.random.nextInt(server.game.width - offset) + offset;
+		int y = server.random.nextInt(server.game.height - offset) + offset;
+		newPlayer.setPosition(x, y);
+		newPlayer.setDirection(0, 0);
+		//update newly connected player's id
+		//this only goes to the new player
+		server.outMessages.add(
+				new Payload(id, PayloadType.ACK, x, y, name, id));
+		//Send Player Connect for new client to all clients
+		server.outMessages.add(
+				new Payload(id, PayloadType.CONNECT,x, y, name)
+				);
+		//Send Move Sync Payload for new client to all clients
+		server.outMessages.add(
+				new Payload(id, PayloadType.MOVE_SYNC, x, y, name)
+				);
+		//Send Direction Payload for new client to all clients
+		server.outMessages.add(
+				new Payload(id, PayloadType.DIRECTION, 0, 0, name)
+				);
+		//send sync details for each previously connected client to newly connected client
+		players.players.forEach((pid, p)->{
+				//NetworkServer.Output("Adding sync message for " + id + " about " + pid);
+				//send sync to target client
+				server.outMessages.add(
+						new Payload(pid, PayloadType.SYNC, p.getPosition().x, 
+								p.getPosition().y, p.getName(), id)
+						);
+				//send direction to target client
+				server.outMessages.add(
+						new Payload(pid, PayloadType.DIRECTION, p.getDirection().x,
+								p.getDirection().y, p.getName(), id)
+						);
+				
+			
+		});
+	}
+		
+		
+	
+	synchronized void processPayload(int id, Payload payloadIn) {
+		Player player = null;
+		//NetworkServer.Output("Processing payload from " + clientIp);
+		//NetworkServer.Output("Type: " + payloadIn.payloadType.toString());
+		switch(payloadIn.payloadType) {
+			case CONNECT:
+				//add player to internal map
+				System.out.println("Player connected with name " + payloadIn.name);
+		
+				SocketServer.id++;
+				createAndSync(SocketServer.id, payloadIn.name);
+				break;
+			case DIRECTION:
+				//blindly update direction
+				player = players.getPlayer(id);
+				dir.x = payloadIn.x;
+				dir.y = payloadIn.y;
+				if(player.setDirection(dir)) {
+					//if direction changed, send to clients
+					server.outMessages.add(
+							new Payload(id, PayloadType.DIRECTION, dir.x, dir.y)
+							);
+				}
+				break;
+			case DISCONNECT:
+				//TODO make sure other client can't cause a different client to disconnect
+				player = players.removePlayer(id);
+				if(player != null) {
+					server.outMessages.add(
+							new Payload(id, PayloadType.DISCONNECT)
+							);
+				}
+			default:
+				break;
+			
+		}
+	}
+	
 	@Override
 	public void run() {
 		try{
 			Payload fromClient;
-			//if disconnected in.readObject will throw an EOFException
-			while(isRunning 
-					&& !client.isClosed() 
-					&& (fromClient = (Payload)in.readObject()) != null) {
-				processPayload(fromClient);
+			while(isRunning && (fromClient = (Payload)in.readObject()) != null) {
+				System.out.println("Received: " + fromClient);
+				System.out.println("Client IP: " + fromClient.id);
+				processPayload(fromClient.id,fromClient);
 			}
 		}
-		catch(Exception e) {
+		catch(IOException | ClassNotFoundException e) {
 			e.printStackTrace();
-			System.out.println("Terminating client");
 		}
 		finally {
 			System.out.println("Server cleaning up IO for " + clientName);
-			stopThread();
+			server.outMessages.add(
+						new Payload(id, PayloadType.DISCONNECT)
+						);
 			cleanup();
-		}
-	}
-	public String getClientName() {
-		return this.clientName;
-	}
-	void processPayload(Payload payload) {
-		System.out.println("Received: " + payload);
-		Payload toClient;
-		switch(payload.payloadType) {
-			case MESSAGETOONE:
-				toClient = new Payload(PayloadType.MESSAGE, payload.x,payload.y);
-				System.out.println("Sending: " + toClient.toString() + " to" + payload.index);
-				server.sendToClientByIndex(payload.index,toClient);
-			break;
-			case MESSAGETOALL:
-				toClient = new Payload(PayloadType.MESSAGE, payload.x,payload.y);
-				server.broadcast(toClient);
-			break;
-			case DISCONNECT:
-				System.out.println("Removing client " + clientName);
-				server.removeClient(this);
-				stopThread();
-				break;
-			default:
-				break;
 		}
 	}
 	public void stopThread() {
 		isRunning = false;
 	}
-	/***
-	 * Returns true if we lost connection to our client
-	 * @return
-	 */
-	public boolean isClosed() {
-		return client.isClosed();
+	public void send(Payload msg) throws IOException {
+		out.writeObject(msg);
 	}
-	public void send(Payload p) {
-		try {
-			out.writeObject(p);
-		} catch (IOException e) {
-			System.out.println("Error sending payload to client");
-			e.printStackTrace();
-			cleanup();
-		}
-	}
-	private void cleanup() {
+	void cleanup() {
 		if(in != null) {
 			try{in.close();}
 			catch(Exception e) { System.out.println("Input already closed");}
@@ -95,18 +149,6 @@ public class ServerThread extends Thread{
 			try {out.close();}
 			catch(Exception e) {System.out.println("Output already closed");}
 		}
-		//most likely not necessary since should all be closed already
-		if(client != null && !client.isClosed()) {
-			//try close input
-			try {client.shutdownInput();} 
-			catch (IOException e) {System.out.println("Socket/Input already closed");}
-			//try close output
-			try {client.shutdownOutput();}
-			catch (IOException e) {System.out.println("Socket/Output already closed");}
-			//try close socket
-			try {client.close();}
-			catch (IOException e) {System.out.println("Socket already closed");}
-		}
-		System.out.println("Client " + clientName + " has been cleaned up");
 	}
+	
 }
