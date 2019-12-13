@@ -142,7 +142,7 @@ public class SocketServer{
 						}
 						else {
 							//Note: we're currently not using the exclusion
-
+							broadcast(payloadOut, -1);
 						}
 					}
 					else {
