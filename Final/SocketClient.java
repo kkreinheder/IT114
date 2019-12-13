@@ -3,7 +3,9 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 import java.util.function.Consumer;
 
@@ -15,6 +17,7 @@ public class SocketClient {
 	boolean isRunning = false;
 	Queue<Payload> outMessages = new LinkedList<Payload>();
 	Queue<Payload> inMessages = new LinkedList<Payload>();
+	List<Bullet> bullets = new ArrayList<Bullet>();
 /*	public void connect(String address, int port) {
 		try {
 			//create new socket to destination and port
@@ -100,8 +103,8 @@ public class SocketClient {
 					while(!server.isClosed() && isRunning) {
 						Payload p = (Payload)in.readObject();
 						inMessages.add(p);
-						if(p.payloadType != PayloadType.MOVE_SYNC)
-						System.out.println("Replay from server: " + p.toString());
+						if(p.payloadType != PayloadType.MOVE_SYNC && p.payloadType != PayloadType.ENEMY_SYNC)
+						System.out.println("Reply from server: " + p.toString());
 					}
 					System.out.println("Stopping server listen thread");
 				}

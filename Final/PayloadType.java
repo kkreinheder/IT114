@@ -6,5 +6,6 @@ public enum PayloadType {
 	SYNC,
 	ACK,
 	MOVE_SYNC,
-	SET_IT
+	SET_IT,
+	BULLET, COLLISION, ENEMY_SYNC
 }

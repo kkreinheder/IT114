@@ -25,6 +25,11 @@ public class Payload implements Serializable{
 		this.name = extra;
 		this.target = target;
 	}
+	public Payload(PayloadType type, int x, int y) {
+		this.x = x;
+		this.y = y;
+		payloadType = type;
+	}
 	@Override
 	public String toString() {
 		return this.id + "-" + this.payloadType.toString() + "(" + x + "," + y +") - " + name;

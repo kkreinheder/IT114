@@ -290,6 +290,7 @@ public class UI extends JPanel {
 		}
 		if(gameEngine != null) {
 			gameEngine.paint(g2d);
+			gameEngine.paintEnemy(g2d);
 		}
 		g2d.dispose();
 	}
@@ -330,6 +331,24 @@ class MoveAction extends AbstractAction{
 	}
 	
 }
+
+class Bullet extends AbstractAction{
+	private static final long serialVersionUID = 397012257495431091L;
+	SocketClient client;
+	SocketServer server;
+	
+	public Bullet() 
+	{
+		
+	}
+	@Override
+	public void actionPerformed(ActionEvent e) {
+		client.bullets.add(null);
+		server.bullets.add(null);
+	}
+	
+}
+
 class Interaction {
 	SocketClient client;
 	UI ui;

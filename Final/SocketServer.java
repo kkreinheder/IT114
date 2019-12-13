@@ -29,17 +29,24 @@ public class SocketServer{
 	public static boolean isRunning = true;
 	Queue<Payload> outMessages = new LinkedList<Payload>();
 	Random random = new Random();
+	List<Bullet> bullets = new ArrayList<Bullet>();
 	private ScheduledThreadPoolExecutor exec = new ScheduledThreadPoolExecutor(1);
 	Dimension game = new Dimension(1000,1000);
 	Player players = new Player();
+	Enemy enemy = new Enemy();
 	public SocketServer() {
 		isRunning = true;
 		exec.scheduleAtFixedRate(()->{
 		}, 5, 5, TimeUnit.SECONDS);
 	}
 	
+	public List<Bullet> bullet()
+	{
+		return bullets;
+	}
+	
 	public synchronized void broadcast(Payload payload, int excludeId) {
-		if(payload.payloadType != PayloadType.MOVE_SYNC) {
+		if(payload.payloadType != PayloadType.MOVE_SYNC && payload.payloadType != PayloadType.ENEMY_SYNC) {
 			//ignore MOVE_SYNC to cut down on log spam
 			SocketServer.Output("Sending message to " + clients.size() + " clients");
 		}
@@ -135,7 +142,7 @@ public class SocketServer{
 						}
 						else {
 							//Note: we're currently not using the exclusion
-							broadcast(payloadOut, -1);
+
 						}
 					}
 					else {
@@ -152,14 +159,40 @@ public class SocketServer{
 		};
 		messageSender.start();
 	}
+	Player player = new Player();
 	void runGameLoop() {
 		Thread gameLoop = new Thread() {
 			@Override
 			public void run() {
 				int syncCounter = 0;
+				int count = 0;
 				System.out.println("Server game loop starting");
 				while(isRunning) {
+					Enemy enemy = new Enemy();
+					
+					enemy.moveEnemy();
+			/*		if(enemy.center.x <= 0 || enemy.center.x >= 1000 || enemy.center.x <= 0 || enemy.center.y >= 1000)
+					{
+						enemy = null;
+					//	enemy = new Enemy();
+					}
+					if(enemy == null)
+					{
+						 enemy = new Enemy();
+					}
+					if(player.center.x == enemy.center.x && player.center.y == player.center.y)
+					{
+						Random r = new Random();
+						//enemy.setPosition();
+						enemy.direction.x = r.nextInt(5) + 5;
+						enemy.direction.y = -1;
+					}
+					if(enemy.center.y == 0)
+					{
+						enemy.direction.y = 1;
+					} */
 					players.movePlayers();
+					
 					syncCounter++;
 					//every thread.sleep * 20ms force sync all players
 					//we don't want to do this too often for bandwidth concerns
@@ -170,6 +203,14 @@ public class SocketServer{
 									new Payload(p.getKey(), PayloadType.MOVE_SYNC,
 											p.getValue().getPosition().x, p.getValue().getPosition().y)
 									);
+						}
+						count++;
+						if(count > 8)
+						{
+							count = 0;
+							outMessages.add(
+								new Payload(PayloadType.ENEMY_SYNC,
+										enemy.center.x, enemy.center.y));
 						}
 					}
 					try {
@@ -198,6 +239,7 @@ public class SocketServer{
 			}
 		}
 	}
+	
 	public static void main(String[] arg) {
 		System.out.println("Starting Server");
 		SocketServer server = new SocketServer();

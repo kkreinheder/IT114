@@ -3,9 +3,10 @@ import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Point;
+import java.awt.event.MouseEvent;
 import java.util.Hashtable;
+import java.util.Map.Entry;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 import javax.swing.ActionMap;
 import javax.swing.InputMap;
@@ -13,16 +14,18 @@ import javax.swing.KeyStroke;
 
 public class Player
 {
-	private Point center = new Point();
+	public Point center = new Point();
 	private Point direction = new Point();
 	private int radius = 25;
 	private int diameter = 2*radius;
+//	Enemy enemy = new Enemy();
+//	SocketServer server = new SocketServer();
 	private int speed = 2;
 	int xi, yi, xMin, xMax, yMin, yMax;
 	int lastX = 10000, lastY = 10000;
 	private String name = "";
 	private Dimension nameSize = new Dimension(0,0);
-	Hashtable<Integer, Player> players = new Hashtable<Integer, Player>();
+	public Hashtable<Integer, Player> players = new Hashtable<Integer, Player>();
 	private ScheduledThreadPoolExecutor exec = new ScheduledThreadPoolExecutor(3);
 
 	private int id = -1;
@@ -137,7 +140,7 @@ public class Player
 		}
     }
 
-	protected void paint(Graphics2D g2d) {
+	protected void paintPlayer(Graphics2D g2d) {
         if (center != null && g2d != null) {
    
             	g2d.fillRect(center.x - radius, center.y - radius, diameter, diameter);
@@ -155,6 +158,11 @@ public class Player
             
         }
     }
+	
+	
+	
+	
+	
 	
 	public static boolean LEFT_DOWN = false, RIGHT_DOWN = false, UP_DOWN = false, DOWN_DOWN = false, SPACE_DOWN = false;
 	private static Point pdd = new Point(-2,-2);
@@ -188,11 +196,14 @@ public class Player
 		im.put(KeyStroke.getKeyStroke("pressed A"), "pA");
 		im.put(KeyStroke.getKeyStroke("pressed S"), "pS");
 		im.put(KeyStroke.getKeyStroke("pressed D"), "pD");
+	//	im.put(MouseEvent.getButton(), "pL");
 		
 		im.put(KeyStroke.getKeyStroke("released W"), "rW");
 		im.put(KeyStroke.getKeyStroke("released A"), "rA");
 		im.put(KeyStroke.getKeyStroke("released S"), "rS");
 		im.put(KeyStroke.getKeyStroke("released D"), "rD");
+		
+		im.put(KeyStroke.getKeyStroke("pressed SPACE"), "SPACE");
 		
 		am.put("pW", new MoveAction(true,0,-1));
 		am.put("pA", new MoveAction(true,-1,0));
@@ -203,6 +214,8 @@ public class Player
 		am.put("rW", new MoveAction(false,0,-1));
 		am.put("rS", new MoveAction(false,0,1));
 		am.put("rD", new MoveAction(false,1,0));
+		
+		am.put("SPACE", new Bullet());
 		
 	}
 	static void applyControls(int id, Player myPlayer, SocketClient client) {
@@ -215,6 +228,12 @@ public class Player
 				System.out.println("Direction: " + mp.toString());
 				//TODO Send new Direction over Network
 				client.send(id, PayloadType.DIRECTION, mp.x, mp.y);
+			}
+			
+			if(Player.SPACE_DOWN)
+			{
+				Player.SPACE_DOWN = false;
+				client.send(id, PayloadType.BULLET);
 			}
 		
 			}
@@ -260,9 +279,15 @@ public class Player
 		    v.move();
 		}
 	}
+
+	public void paintBullet(Graphics2D g2d) {
+		for ( Player v : players.values() ) {
+		    v.paintPlayer(g2d);
+		}
+	}
 	public void paintPlayers(Graphics2D g2d) {
 		for ( Player v : players.values() ) {
-		    v.paint(g2d);
+		    v.paintPlayer(g2d);
 		}
 	}
 	public void updatePlayers(int id, PayloadType type, int x, int y, String name) {
@@ -287,4 +312,44 @@ public class Player
 			}
 		}
 	}
+	public static int calculateDistanceBetweenPoints(
+			  Point a, 
+			  Point b) {       
+	    return (int)Math.sqrt((b.y - a.y) * (b.y - a.y) + (b.x - a.x) * (b.x - a.x));
+	}
+	public Entry<Integer,Player> checkCollisions(Player p) {
+		Entry<Integer,Player> tagged = null;
+		synchronized(players) {
+			for(Entry<Integer, Player> set : players.entrySet()) {
+				if(p.getID() != set.getKey()) {
+					System.out.println("Tagger ID: " + p.getID());
+					System.out.println("Checking ID: " + set.getKey());
+					//get distance between centers
+					int dist = calculateDistanceBetweenPoints(p.getPosition(), set.getValue().getPosition());
+					//System.out.println("Dist: " + dist);
+					//calculate expected distance based on radius
+					int rad = (p.getRadius()+set.getValue().getRadius());
+					//System.out.println("Rad: " + rad);
+					//check if point is within range
+					if(dist <= rad) {
+						tagged = set;
+						break;
+					}
+				}
+			}
+		}
+		return tagged;
+	}
+	public Player getID(int i) {
+		// TODO Auto-generated method stub
+		return null;
+	}
 }
+
+/*class Bullet
+{
+	public Bullet()
+	{
+		
+	}
+} */

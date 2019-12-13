@@ -1,17 +1,24 @@
 
 import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.io.IOException;
 import java.net.UnknownHostException;
-import java.util.List;
+import java.util.Map.Entry;
+import java.util.Random;
 import java.util.function.Consumer;
 
 public class GameEngine {
-	Player players = new Player();
+	Player player = new Player();
+	
+	Enemy enemy = new Enemy();
 	static Dimension playArea = new Dimension(1000,1000);
 	static boolean isRunning = false;
 	SocketClient client;
+	SocketServer server;
 	LocalPlayer localPlayer;
+	public int id;
+//	Player players = player.getPlayer(id);
 	UI ui;
 	static GameState gameState = GameState.LOBBY;
 	public GameEngine (UI ui, Dimension playArea) {
@@ -46,7 +53,37 @@ public class GameEngine {
 					//apply current control state
 					Player.applyControls(localPlayer.id, localPlayer.player, client);
 					//locally move the players
-					players.movePlayers();
+					enemy.moveEnemy();
+					player.movePlayers();
+				//	checkTouched();
+					if(enemy.center.x <= 0 || enemy.center.x >= 1000 || enemy.center.x <= 0 || enemy.center.y >= 1000)
+					{
+						enemy = null;
+					//	enemy = new Enemy();
+					}
+					if(enemy == null)
+					{
+						 enemy = new Enemy();
+					}
+	
+				
+			//	 checkCollisions(player.getPlayer(id));
+					
+				//	Point playerPos = player.getPosition();
+				//	Point enemyPos = enemy.getPosition();
+					
+				/*	if(playerPos.equals(enemyPos))
+					{
+						Random r = new Random();
+						//enemy.setPosition();
+						enemy.direction.x = r.nextInt(5) + 5;
+						enemy.direction.y = -1;
+					} */
+					//player.center.x == enemy.center.x && player.center.y == player.center.y
+					if(enemy.center.y == 0)
+					{
+						enemy.direction.y = 1;
+					} 
 					//redraw the UI/players
 					ui.repaint();
 					try {
@@ -62,6 +99,50 @@ public class GameEngine {
 		gameLoop.start();
 		System.out.println("Gameloop starting");
 	}
+	public static int calculateDistanceBetweenPoints(
+			  Point a, 
+			  Point b) {       
+	    return (int)Math.sqrt((b.y - a.y) * (b.y - a.y) + (b.x - a.x) * (b.x - a.x));
+	}
+	Point playerPos = player.getPosition();
+	Point enemyPos =  enemy.getPosition();
+
+	public void checkCollisions(Player p) {
+	//	Entry<Integer,Player> tagged = null;
+		synchronized(player.players) {
+			for(Entry<Integer, Player> set : player.players.entrySet()) {
+				if(p.getID() != set.getKey()) {
+					System.out.println("Tagger ID: " + p.getID());
+					System.out.println("Checking ID: " + set.getKey());
+					//get distance between centers
+					int dist = calculateDistanceBetweenPoints(p.getPosition(), enemyPos);
+					//System.out.println("Dist: " + dist);
+					//calculate expected distance based on radius
+					int rad = (p.getRadius()+enemy.getRadius());
+					//System.out.println("Rad: " + rad);
+					//check if point is within range
+					if(dist <= rad) {
+						Random r = new Random();
+					enemy.setDirection(r.nextInt(5) + 5, -1);
+						break;
+					}
+
+//	int dist = calculateDistanceBetweenPoints(playerPos, enemyPos );
+	//System.out.println("Dist: " + dist);
+	//calculate expected distance based on radius
+//	int rad = (player.getRadius()+ enemy.getRadius());
+	//System.out.println("Rad: " + rad);
+	//check if point is within range
+//	if(dist <= 200) {
+//		Random r = new Random();
+//		enemy.setDirection(r.nextInt(5) + 5, -1);
+	//	enemy = null;
+//	}
+}
+			}
+		}
+	}
+
 	public boolean doSocketConnect(String host, int port) throws NumberFormatException, UnknownHostException, IOException {
 		System.out.println("Connecting " + host + ":" + port);
 		if(client == null) {
@@ -69,6 +150,11 @@ public class GameEngine {
 		}
 		return client.connect(host, port);
 	} 
+	
+	public void checkTouched()
+	{
+		
+	}
 	public void CloseConnection() {
 		//TODO send disc
 		client.disconnect(localPlayer.id);
@@ -87,13 +173,16 @@ public class GameEngine {
 		client.send(localPlayer.id, PayloadType.CONNECT,0,0, localPlayer.name);
 	} 
 	public void paint(Graphics2D g2d) {
-		players.paintPlayers(g2d);
+		player.paintPlayers(g2d);
+	}
+	public void paintEnemy(Graphics2D g2d) {
+		enemy.paintEnemy(g2d);
 	}
 	void addPlayer(Payload p, boolean isMe) {
 		Player newPlayer = new Player(p.name);
 		newPlayer.setPosition(p.x, p.y);
 		newPlayer.setID(p.id);
-		players.addPlayer(p.id, newPlayer);
+		player.addPlayer(p.id, newPlayer);
 		if(isMe) {
 			localPlayer.player = newPlayer;
 			localPlayer.name = newPlayer.getName();
@@ -114,14 +203,19 @@ public class GameEngine {
 	}
 	void updatePlayer(Payload p) {
 		//try to update the player with whatever payload we received
-		players.updatePlayers(p.id, p.payloadType, p.x, p.y, p.name);
+		player.updatePlayers(p.id, p.payloadType, p.x, p.y, p.name);
 	}
+	void updateEnemy(Payload p) {
+		//try to update the player with whatever payload we received
+		enemy.updateEnemy(p.id, p.payloadType, p.x, p.y);
+	}
+	
 	void processFromServer(Payload p) {
 		if(p.id < 0) {
 			System.out.println("Heard response from server with invalid id " + p.id);
 			return;
 		}
-		Player sync = players.getPlayer(p.id);
+		Player sync = player.getPlayer(p.id);
 		switch(p.payloadType) {
 			case ACK://just local player
 				System.out.println("ACK Payload: " + p.toString());
@@ -134,9 +228,11 @@ public class GameEngine {
 				break;
 			case DISCONNECT: //broad cast
 				//disconnection from server, update local track of players
-				players.removePlayer(p.id);
+				player.removePlayer(p.id);
 				System.out.println("Removing player for " + p.id);
 				break;
+			case ENEMY_SYNC:
+				updateEnemy(p);
 	
 			default:
 				updatePlayer(p);

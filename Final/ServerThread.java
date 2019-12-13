@@ -72,9 +72,36 @@ class ServerThread extends Thread{
 			
 		});
 	}
-		
-		
-	
+	private void handleTagging(int id) throws Exception {
+		Player player = server.players.getPlayer(id);
+		if(player != null) {
+			SocketServer.Output(player.getID() + " is tagging");
+			Entry<Integer,Player> tagged = server.players.checkCollisions(player);
+			if(tagged != null) {
+				Player taggedPlayer = tagged.getValue();
+				System.out.println("Tagged " + taggedPlayer.getName() + "(" + taggedPlayer.getID() + ")");
+				if(taggedPlayer.getID() == id) {
+					throw new Exception("Somehow we tagged ourself");
+				}
+				//update server state
+				server.players.updatePlayers(tagged.getKey(), PayloadType.SET_IT,
+						taggedPlayer.getPosition().x,
+						taggedPlayer.getPosition().y,
+						taggedPlayer.getName());
+				//tagged, make player it and tell all clients
+				server.outMessages.add(
+						new Payload(tagged.getKey(), PayloadType.SET_IT, 0,0, taggedPlayer.getName())
+						);
+				
+				//update stats of both players and sync with all clients
+			
+			}
+			else {
+				SocketServer.Output("No collisions for Tag");
+			}
+		}
+	}
+
 	synchronized void processPayload(int id, Payload payloadIn) {
 		Player player = null;
 		//NetworkServer.Output("Processing payload from " + clientIp);
@@ -107,6 +134,17 @@ class ServerThread extends Thread{
 							new Payload(id, PayloadType.DISCONNECT)
 							);
 				}
+			case COLLISION:
+				//check collision and see if tagged
+				SocketServer.Output("Handling trigger tag for " + id);
+				try {
+					handleTagging(id);
+				}
+				catch(Exception e) {
+					SocketServer.Output(e.getMessage());
+				}
+				break;
+			
 			default:
 				break;
 			
